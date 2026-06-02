@@ -31,7 +31,11 @@ const INIT_ORDERS = [
     ],
     shipTo:{ name:'Luis Orta Jr', addr:'500 Ocean Blvd', city:'Miami Beach', state:'FL', zip:'33139', country:'US' },
     shipFrom:{ name:'Carolina Coast Cards', addr:'1551 Oak Lawn Ave', city:'Dallas', state:'TX', zip:'75207-3619' },
-    shipStatus:'unlabeled', shipments:[], subOrders:null,
+    shipStatus:'unlabeled', shipments:[],
+    subOrders:[
+      { subId:'3000000024-S1', label:'Shipment 1 of 2', itemIds:['i1'],       shipStatus:'unlabeled', shipments:[] },
+      { subId:'3000000024-S2', label:'Shipment 2 of 2', itemIds:['i2','i3'], shipStatus:'unlabeled', shipments:[] },
+    ],
   },
   {
     id:'3000000022', date:'Apr 15, 2026', channel:'ebay',
@@ -155,6 +159,8 @@ function Chip({ status, small }) {
     unlabeled:       { label:'Unlabeled',       bg:'#F5F5F5', color:'rgba(0,0,0,0.55)', border:'#E0E0E0' },
     label_purchased: { label:'Label Purchased', bg:'#E5F6FD', color:'#0288D1',          border:'#B3E5FC' },
     shipped:         { label:'Shipped',         bg:'#E3F2FD', color:'#1976D2',          border:'#BBDEFB' },
+    refund_requested:{ label:'Refund Requested',bg:'#FFF3E0', color:'#E65100',          border:'#FFE0B2' },
+    refunded:        { label:'Refunded',        bg:'#EEEEEE', color:'#616161',          border:'#E0E0E0' },
   };
   const { label, bg, color, border } = cfg[status] || cfg.unlabeled;
   return (
@@ -231,8 +237,19 @@ function FieldSelect({ label, value, onChange, options }) {
 }
 
 /* ── Split Order Modal ─────────────────────────────────────────────────────── */
-function SplitOrderModal({ order, onSave, onClose }) {
-  const initQty = () => { const q=[{}]; order.items.forEach(i=>{q[0][i.id]=i.qty;}); return q; };
+function SplitOrderModal({ order, onSave, onClose, initialGroups=null }) {
+  const isEditing = !!(initialGroups && initialGroups.length);
+  const initQty = () => {
+    /* Edit mode: rebuild the quantity layout from the existing split shipments */
+    if (initialGroups && initialGroups.length) {
+      return initialGroups.map(g => {
+        const slot = {};
+        order.items.forEach(i => { slot[i.id] = g.itemIds.includes(i.id) ? i.qty : 0; });
+        return slot;
+      });
+    }
+    const q=[{}]; order.items.forEach(i=>{q[0][i.id]=i.qty;}); return q;
+  };
   const [quantities, setQuantities] = useState(initQty);
 
   function addShipment() {
@@ -261,10 +278,10 @@ function SplitOrderModal({ order, onSave, onClose }) {
     <div style={{ position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center' }}>
       <div style={{ background:'#fff',borderRadius:12,width:820,maxWidth:'95vw',maxHeight:'90vh',display:'flex',flexDirection:'column',boxShadow:'0 20px 60px rgba(0,0,0,0.25)' }}>
         <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',padding:'20px 24px',borderBottom:'1px solid #F0F0F0' }}>
-          <span style={{ fontSize:18,fontWeight:700 }}>Split order</span>
+          <span style={{ fontSize:18,fontWeight:700 }}>{isEditing ? 'Edit split shipment' : 'Split order'}</span>
           <button onClick={onClose} style={{ background:'none',border:'none',cursor:'pointer',fontSize:22,color:'rgba(0,0,0,0.4)',lineHeight:1 }}>×</button>
         </div>
-        <div style={{ padding:'14px 24px 0',fontSize:14,color:'rgba(0,0,0,0.6)' }}>Split order to two shipments, or add more shipments.</div>
+        <div style={{ padding:'14px 24px 0',fontSize:14,color:'rgba(0,0,0,0.6)' }}>{isEditing ? 'Move items between shipments, add a shipment, or remove one to merge items back.' : 'Split order to two shipments, or add more shipments.'}</div>
         <div style={{ flex:1,overflowY:'auto',padding:'16px 24px' }}>
           <div style={{ display:'grid',gridTemplateColumns:`1fr repeat(${quantities.length},200px) 60px`,marginBottom:8 }}>
             <div style={{ fontSize:11,fontWeight:700,color:'rgba(0,0,0,0.45)',textTransform:'uppercase',letterSpacing:'0.5px',paddingBottom:8,borderBottom:'2px solid #F0F0F0' }}>Items</div>
@@ -311,7 +328,7 @@ function SplitOrderModal({ order, onSave, onClose }) {
           <button onClick={()=>setQuantities(initQty())} style={{ background:'none',border:'none',cursor:'pointer',fontSize:14,fontWeight:500,color:'#1976D2' }}>Reset</button>
           <div style={{ display:'flex',gap:10 }}>
             <button onClick={addShipment} style={{ padding:'9px 20px',fontSize:13,fontWeight:600,background:'transparent',color:'#1976D2',border:'1px solid #1976D2',borderRadius:6,cursor:'pointer' }}>Add shipment</button>
-            <button onClick={handleSave} style={{ padding:'9px 24px',fontSize:13,fontWeight:600,background:'#1976D2',color:'#fff',border:'none',borderRadius:6,cursor:'pointer' }}>Save</button>
+            <button onClick={handleSave} style={{ padding:'9px 24px',fontSize:13,fontWeight:600,background:'#1976D2',color:'#fff',border:'none',borderRadius:6,cursor:'pointer' }}>{isEditing ? 'Save changes' : 'Save'}</button>
           </div>
         </div>
       </div>
@@ -319,10 +336,56 @@ function SplitOrderModal({ order, onSave, onClose }) {
   );
 }
 
+/* ── Request Refund Modal ──────────────────────────────────────────────────── */
+function RefundModal({ count, onConfirm, onClose }) {
+  const n = count || 1;
+  const cta = `Request ${n} refund${n>1?'s':''}`;
+  const bullets = [
+    <>Refunds may take up to <strong style={{ fontWeight:600 }}>14 days</strong> to credit into your account. <span style={{ color:'#1976D2', textDecoration:'underline', cursor:'pointer' }}>Learn more</span></>,
+    <>Any insurance purchased with a carrier or through Shippo Total Protection will be voided and refunded to you.</>,
+    <>You will <strong style={{ fontWeight:600 }}>immediately be unable to use labels</strong> for postage.</>,
+    <>Refunds cannot be undone, but you can create a new label by buying a new label.</>,
+  ];
+  return (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:1100, display:'flex', alignItems:'center', justifyContent:'center' }}
+      onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()}
+        style={{ background:'#fff', borderRadius:12, width:560, maxWidth:'92vw', boxShadow:'0 20px 60px rgba(0,0,0,0.25)', overflow:'hidden' }}>
+        {/* Header */}
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'20px 24px 14px' }}>
+          <span style={{ fontSize:18, fontWeight:700 }}>Request {n>1?'refunds':'refund'}</span>
+          <button onClick={onClose} style={{ background:'none', border:'none', cursor:'pointer', fontSize:22, color:'rgba(0,0,0,0.4)', lineHeight:1 }}>×</button>
+        </div>
+        <div style={{ height:1, background:'#F0F0F0' }} />
+        {/* Body */}
+        <div style={{ padding:'18px 24px 22px' }}>
+          <ul style={{ margin:0, paddingLeft:20, display:'flex', flexDirection:'column', gap:14 }}>
+            {bullets.map((b,i)=>(
+              <li key={i} style={{ fontSize:14, lineHeight:1.55, color:'rgba(0,0,0,0.75)' }}>{b}</li>
+            ))}
+          </ul>
+        </div>
+        <div style={{ height:1, background:'#F0F0F0' }} />
+        {/* Footer */}
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'14px 24px' }}>
+          <button onClick={onClose} style={{ background:'none', border:'none', cursor:'pointer', fontSize:14, fontWeight:600, color:'rgba(0,0,0,0.7)' }}>Cancel</button>
+          <button onClick={onConfirm}
+            style={{ padding:'10px 22px', fontSize:14, fontWeight:700, background:'#C62828', color:'#fff', border:'none', borderRadius:8, cursor:'pointer' }}
+            onMouseEnter={e=>e.currentTarget.style.background='#B71C1C'}
+            onMouseLeave={e=>e.currentTarget.style.background='#C62828'}>
+            {cta}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── MoreActionsMenu ─────────────────────────────────────────────────────── */
-function MoreActionsMenu({ order, subOrder, onOpenPanel, onOpenSplit, isFulfilled }) {
+function MoreActionsMenu({ order, subOrder, onOpenPanel, onOpenSplit, onRequestRefund, isFulfilled, isRefunded }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
+  const orderIsSplit = !!(order.subOrders && order.subOrders.length > 1);
 
   useEffect(() => {
     if (!open) return;
@@ -333,9 +396,10 @@ function MoreActionsMenu({ order, subOrder, onOpenPanel, onOpenSplit, isFulfille
 
   const items = [
     { label: 'View order',          icon: '👁',  action: () => { onOpenPanel(); setOpen(false); } },
-    !subOrder && { label: 'Split order', icon: '✂', action: () => { onOpenSplit(); setOpen(false); } },
+    !subOrder && { label: orderIsSplit ? 'Edit split' : 'Split order', icon: orderIsSplit ? '✏' : '✂', action: () => { onOpenSplit(); setOpen(false); } },
     { label: 'Download packing slip', icon: '📄', action: () => setOpen(false) },
     isFulfilled && { label: 'Download shipping label', icon: '🏷', action: () => setOpen(false) },
+    isFulfilled && !isRefunded && { label: 'Request a refund', icon: '↩', danger: true, action: () => { onRequestRefund && onRequestRefund(); setOpen(false); } },
   ].filter(Boolean);
 
   return (
@@ -351,8 +415,8 @@ function MoreActionsMenu({ order, subOrder, onOpenPanel, onOpenSplit, isFulfille
         <div style={{ position:'absolute', right:0, top:'calc(100% + 4px)', background:'#fff', border:'1px solid #E5E5E5', borderRadius:8, boxShadow:'0 8px 24px rgba(0,0,0,0.13)', zIndex:600, minWidth:200, overflow:'hidden' }}>
           {items.map((item, i) => (
             <button key={i} onClick={e=>{ e.stopPropagation(); item.action(); }}
-              style={{ display:'flex', alignItems:'center', gap:10, width:'100%', padding:'11px 16px', fontSize:13, fontWeight:400, color:'rgba(0,0,0,0.78)', background:'none', border:'none', cursor:'pointer', textAlign:'left', borderBottom: i < items.length-1 ? '1px solid #F5F5F5' : 'none' }}
-              onMouseEnter={e=>e.currentTarget.style.background='#F5F5F5'}
+              style={{ display:'flex', alignItems:'center', gap:10, width:'100%', padding:'11px 16px', fontSize:13, fontWeight:400, color:item.danger?'#C62828':'rgba(0,0,0,0.78)', background:'none', border:'none', cursor:'pointer', textAlign:'left', borderBottom: i < items.length-1 ? '1px solid #F5F5F5' : 'none' }}
+              onMouseEnter={e=>e.currentTarget.style.background=item.danger?'#FEECEC':'#F5F5F5'}
               onMouseLeave={e=>e.currentTarget.style.background='none'}>
               <span style={{ fontSize:14, width:18, textAlign:'center', flexShrink:0 }}>{item.icon}</span>
               {item.label}
@@ -1477,10 +1541,15 @@ function CustomsDeclarationModal({ order, items: initItems, onSave, onClose }) {
 }
 
 /* ── ShipmentPanel — single-page, all-in-one ──────────────────────────────── */
-function ShipmentPanel({ order, onClose, onUpdate, showToast }) {
+function ShipmentPanel({ order, onClose, onUpdate, onUpdateParent, openRefundModal, showToast }) {
+  const updateParent = onUpdateParent || onUpdate;
   const allItems = order.items;
   const totalWeight = allItems.reduce((s,i)=>s+(parseFloat(i.weight)||0)*i.qty, 0);
   const hasShipments = order.shipments && order.shipments.length > 0;
+  const isRefunded = order.shipStatus === 'refund_requested' || order.shipStatus === 'refunded';
+  /* When the label has been refunded, the user can buy a fresh label — this flips the
+     panel from the read-only "Shipment Details" view back to the editable buy-label view. */
+  const [buyNewMode, setBuyNewMode] = useState(false);
 
   /* ─ Form state ─ */
   const [pkg, setPkg] = useState({ type:'box', length:'', width:'', height:'', weightVal:totalWeight.toFixed(2), weightUnit:'lbs', dimUnit:'inches' });
@@ -1583,22 +1652,59 @@ function ShipmentPanel({ order, onClose, onUpdate, showToast }) {
         shippedAt:new Date().toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit'}),
         status:'Label Created', channelSynced:false, trackingEvents:null,
       };
-      onUpdate(order.id, { shipments:[...(order.shipments||[]),newShipment], shipStatus:'label_purchased' });
+      /* If we're re-buying after a refund, replace the voided label rather than stacking onto it */
+      const baseShipments = (buyNewMode || isRefunded) ? [] : (order.shipments||[]);
+      onUpdate(order.id, { shipments:[...baseShipments, newShipment], shipStatus:'label_purchased' });
+      setBuyNewMode(false);
       setPurchasing(false);
       showToast('✓ Label purchased successfully!');
     },1600);
   }
 
-  function handleSplitSave(groups) {
-    const subOrders = groups.map((g,i)=>({ subId:`${order.id}-S${i+1}`, label:`Shipment ${i+1} of ${groups.length}`, itemIds:g.itemIds, shipStatus:'unlabeled', shipments:[] }));
-    onUpdate(order.id, { subOrders });
-    setSplitModal(false);
+  function requestRefundForThis() {
+    openRefundModal && openRefundModal(1, () => {
+      onUpdate(order.id, {
+        shipStatus:'refund_requested',
+        shipments:(order.shipments||[]).map(s=>({ ...s, refundStatus:'requested' })),
+      });
+      showToast('↩ Refund requested · credited within 14 days');
+    });
   }
 
-  const isSplit = !!(order.subOrders && order.subOrders.length > 1);
+  function handleSplitSave(groups) {
+    /* Always re-split the parent order (order.id is the parent id, even for a sub-order panel) */
+    if (groups.length <= 1) {
+      /* Merged back into one shipment → fully un-split the order */
+      updateParent(order.id, { subOrders: null });
+      setSplitModal(false);
+      showToast('✓ Shipments merged back into one order');
+      if (order._subId) onClose();
+      return;
+    }
+    const subOrders = groups.map((g,i)=>({ subId:`${order.id}-S${i+1}`, label:`Shipment ${i+1} of ${groups.length}`, itemIds:g.itemIds, shipStatus:'unlabeled', shipments:[] }));
+    updateParent(order.id, { subOrders });
+    setSplitModal(false);
+    if (order._subId) {
+      /* Editing from within a shipment: the open sub-order may no longer exist, so close the panel */
+      showToast(`✓ Split updated · ${subOrders.length} shipment${subOrders.length>1?'s':''}`);
+      onClose();
+    } else {
+      showToast(`✓ Order split into ${subOrders.length} shipment${subOrders.length>1?'s':''}`);
+    }
+  }
+
+  /* A panel is part of a split if it IS a split parent, or it's one of the split shipments (_subId) */
+  const isSplit = !!order._subId || !!(order.subOrders && order.subOrders.length > 1);
+
+  /* The Split Order modal always operates on the FULL original order.
+     For a shipment (sub-order) panel, recover the parent's full item list + current split layout. */
+  const splitParentOrder = order._subId
+    ? { ...order, items: order._parentItems || order.items, subOrders: order._parentSubOrders || order.subOrders }
+    : order;
+  const splitInitialGroups = (order._subId ? order._parentSubOrders : order.subOrders) || null;
 
   /* ─── VIEW SHIPMENT DETAIL (fulfilled) ─── */
-  if (hasShipments) {
+  if (hasShipments && !buyNewMode) {
     /* Determine if ALL shipments were synced from channel (no Shippo label) */
     const allSyncedFromChannel = order.shipments.every(s => s.syncedFromChannel);
 
@@ -1607,11 +1713,22 @@ function ShipmentPanel({ order, onClose, onUpdate, showToast }) {
 
         {/* Header */}
         <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',padding:'16px 20px',borderBottom:'1px solid rgba(0,0,0,0.08)',flexShrink:0 }}>
-          <span style={{ fontSize:16,fontWeight:700 }}>Shipment Details</span>
+          <span style={{ fontSize:16,fontWeight:700 }}>{isRefunded ? 'Refunded Label' : 'Shipment Details'}</span>
           <button onClick={onClose} style={{ background:'none',border:'none',cursor:'pointer',fontSize:22,color:'rgba(0,0,0,0.4)',padding:0,lineHeight:1 }}>×</button>
         </div>
 
         <div style={{ flex:1,overflowY:'auto',padding:'20px' }}>
+          {isRefunded && (
+            <div style={{ display:'flex',gap:10,alignItems:'flex-start',background:'#FFF3E0',border:'1px solid #FFE0B2',borderRadius:10,padding:'12px 14px',marginBottom:16 }}>
+              <span style={{ fontSize:16,lineHeight:1.2 }}>↩</span>
+              <div>
+                <div style={{ fontSize:13,fontWeight:700,color:'#E65100',marginBottom:2 }}>Refund requested</div>
+                <div style={{ fontSize:12,color:'rgba(0,0,0,0.6)',lineHeight:1.5 }}>
+                  This label has been voided and can no longer be used for postage. Refunds credit to your account within 14 days. To ship this order, buy a new label below.
+                </div>
+              </div>
+            </div>
+          )}
           {order.shipments.map((shipment, idx) => {
             const shipItems = allItems.filter(i=>shipment.itemIds.includes(i.id));
             return (
@@ -1643,7 +1760,9 @@ function ShipmentPanel({ order, onClose, onUpdate, showToast }) {
                     <span style={{ fontSize:13 }}>{shipment.shippedAt}</span>
 
                     <span style={{ fontSize:13,color:'rgba(0,0,0,0.5)' }}>Status:</span>
-                    <span style={{ fontSize:13 }}>{shipment.status}</span>
+                    <span style={{ fontSize:13, color: shipment.refundStatus==='requested' ? '#E65100' : 'inherit', fontWeight: shipment.refundStatus==='requested' ? 600 : 400 }}>
+                      {shipment.refundStatus==='requested' ? 'Voided — refund requested' : shipment.status}
+                    </span>
 
                     <span style={{ fontSize:13,color:'rgba(0,0,0,0.5)' }}>Items:</span>
                     <span style={{ fontSize:13,color:'#1976D2',cursor:'pointer',textDecoration:'underline' }}>
@@ -1678,8 +1797,16 @@ function ShipmentPanel({ order, onClose, onUpdate, showToast }) {
           })}
         </div>
 
-        {/* Footer actions — hidden when all shipments are synced from channel */}
-        {!allSyncedFromChannel && (
+        {/* Footer actions */}
+        {isRefunded ? (
+          <div style={{ padding:'14px 20px',borderTop:'1px solid rgba(0,0,0,0.07)',flexShrink:0,display:'flex',flexDirection:'column',gap:8 }}>
+            <button onClick={()=>{ setSelectedRate(null); setBuyNewMode(true); }}
+              style={{ width:'100%',padding:'11px 0',fontSize:14,fontWeight:700,background:'#1976D2',color:'#fff',border:'none',borderRadius:6,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:7 }}>
+              🏷 Buy a New Label
+            </button>
+            <div style={{ fontSize:11.5,color:'rgba(0,0,0,0.45)',textAlign:'center' }}>Refunds cannot be undone. Buying a new label lets you reship this order.</div>
+          </div>
+        ) : !allSyncedFromChannel && (
           <div style={{ padding:'14px 20px',borderTop:'1px solid rgba(0,0,0,0.07)',flexShrink:0,display:'flex',flexDirection:'column',gap:8 }}>
             <button style={{ width:'100%',padding:'10px 0',fontSize:13,fontWeight:600,background:'#1976D2',color:'#fff',border:'none',borderRadius:6,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:7 }}>
               🖨 Print Shipping Label
@@ -1687,7 +1814,10 @@ function ShipmentPanel({ order, onClose, onUpdate, showToast }) {
             <button style={{ width:'100%',padding:'9px 0',fontSize:13,fontWeight:500,background:'#fff',color:'rgba(0,0,0,0.7)',border:'1px solid #E0E0E0',borderRadius:6,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:7 }}>
               🧾 Print Packing Slip
             </button>
-            <button style={{ width:'100%',padding:'9px 0',fontSize:13,fontWeight:500,background:'#fff',color:'#C62828',border:'1px solid #FFCDD2',borderRadius:6,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:7 }}>
+            <button onClick={requestRefundForThis}
+              style={{ width:'100%',padding:'9px 0',fontSize:13,fontWeight:500,background:'#fff',color:'#C62828',border:'1px solid #FFCDD2',borderRadius:6,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:7 }}
+              onMouseEnter={e=>e.currentTarget.style.background='#FEECEC'}
+              onMouseLeave={e=>e.currentTarget.style.background='#fff'}>
               ↩ Request Refund
             </button>
           </div>
@@ -1708,7 +1838,13 @@ function ShipmentPanel({ order, onClose, onUpdate, showToast }) {
         <div style={{ padding:'12px 20px 10px',borderBottom:'1px solid rgba(0,0,0,0.07)',flexShrink:0 }}>
           <div style={{ display:'flex',justifyContent:'space-between',alignItems:'flex-start' }}>
             <div>
-              <div style={{ fontSize:16,fontWeight:700,color:'rgba(0,0,0,0.85)',marginBottom:2 }}>Order Detail</div>
+              {buyNewMode && (
+                <button onClick={()=>setBuyNewMode(false)}
+                  style={{ display:'inline-flex',alignItems:'center',gap:4,background:'none',border:'none',cursor:'pointer',fontSize:12,color:'#1976D2',fontWeight:600,padding:0,marginBottom:4 }}>
+                  ‹ Back to refunded label
+                </button>
+              )}
+              <div style={{ fontSize:16,fontWeight:700,color:'rgba(0,0,0,0.85)',marginBottom:2 }}>{buyNewMode ? 'Buy a New Label' : 'Order Detail'}</div>
               <div style={{ fontSize:12,color:'rgba(0,0,0,0.4)' }}>Order #{order.id.slice(-5)} to {order.buyer}</div>
             </div>
             <button onClick={onClose} style={{ background:'none',border:'none',cursor:'pointer',fontSize:20,color:'rgba(0,0,0,0.4)',padding:2,lineHeight:1 }}>×</button>
@@ -1717,6 +1853,13 @@ function ShipmentPanel({ order, onClose, onUpdate, showToast }) {
 
         {/* Scrollable body */}
         <div style={{ flex:1,overflowY:'auto',padding:'16px 20px' }}>
+
+          {buyNewMode && (
+            <div style={{ display:'flex',gap:8,alignItems:'flex-start',background:'#E3F2FD',border:'1px solid #BBDEFB',borderRadius:8,padding:'10px 12px',marginBottom:14 }}>
+              <span style={{ fontSize:14,lineHeight:1.3 }}>ℹ️</span>
+              <div style={{ fontSize:12,color:'rgba(0,0,0,0.7)',lineHeight:1.5 }}>The previous label was refunded. Confirm the details below and buy a fresh label to ship this order.</div>
+            </div>
+          )}
 
           {/* ── Addresses ── */}
           <AddressesSection order={order} addrEdits={addrEdits} setAddrEdits={setAddrEdits} error={addrError} />
@@ -1729,7 +1872,8 @@ function ShipmentPanel({ order, onClose, onUpdate, showToast }) {
             actionBtn={
               <div style={{ display:'flex', gap:6 }} onClick={e=>e.stopPropagation()}>
                 <button onClick={()=>setSplitModal(true)}
-                  style={{ padding:'3px 10px', fontSize:11.5, fontWeight:600, color:isSplit?'#1976D2':'#1976D2', background:isSplit?'#E3F2FD':'#E3F2FD', border:`1px solid ${isSplit?'#BBDEFB':'#BBDEFB'}`, borderRadius:4, cursor:'pointer', whiteSpace:'nowrap' }}>
+                  title={isSplit ? 'Edit how items are divided across shipments' : 'Split this order into multiple shipments'}
+                  style={{ padding:'3px 10px', fontSize:11.5, fontWeight:600, color:'#1976D2', background:'#E3F2FD', border:'1px solid #BBDEFB', borderRadius:4, cursor:'pointer', whiteSpace:'nowrap' }}>
                   {isSplit ? '✏ Edit Split Ship' : '✂ Split Ship'}
                 </button>
                 <button onClick={()=>setCustomsModal(true)}
@@ -2022,7 +2166,7 @@ function ShipmentPanel({ order, onClose, onUpdate, showToast }) {
         </div>
       </div>
 
-      {splitModal   && <SplitOrderModal order={order} onSave={handleSplitSave} onClose={()=>setSplitModal(false)} />}
+      {splitModal   && <SplitOrderModal order={splitParentOrder} initialGroups={splitInitialGroups} onSave={handleSplitSave} onClose={()=>setSplitModal(false)} />}
       {customsModal && <CustomsDeclarationModal order={order} items={customsItems} onSave={setCustomsItems} onClose={()=>setCustomsModal(false)} />}
     </>
   );
@@ -2348,10 +2492,12 @@ export default function App() {
   const [sortOrder,   setSortOrder]   = useState('newest');
   const [toast,       setToast]       = useState(null);
   const [expanded,    setExpanded]    = useState(new Set());
+  const [refundModal, setRefundModal] = useState(null); /* { count, onConfirm } */
 
   function updateOrder(id, patch) { setOrders(prev=>prev.map(o=>o.id===id?{...o,...patch}:o)); }
   function showToast(msg) { setToast(msg); setTimeout(()=>setToast(null),3000); }
   function setTweak(k,v) { setTweaks(t=>({...t,[k]:v})); }
+  function openRefund(count, onConfirm) { setRefundModal({ count, onConfirm: () => { onConfirm(); setRefundModal(null); } }); }
 
   const counts = {
     all:       orders.length,
@@ -2396,7 +2542,7 @@ export default function App() {
       const parent = orders.find(o=>o.id===parentId);
       const sub    = parent?.subOrders?.find(s=>s.subId===subId);
       if (parent && sub) {
-        activeOrder = { ...parent, id:parentId, _subId:subId, items:parent.items.filter(i=>sub.itemIds.includes(i.id)), shipments:sub.shipments||[], shipStatus:sub.shipStatus||'unlabeled', subOrders:null };
+        activeOrder = { ...parent, id:parentId, _subId:subId, _parentItems:parent.items, _parentSubOrders:parent.subOrders, items:parent.items.filter(i=>sub.itemIds.includes(i.id)), shipments:sub.shipments||[], shipStatus:sub.shipStatus||'unlabeled', subOrders:null };
         handleUpdateFromPanel = (id, patch) => {
           setOrders(prev=>prev.map(o=>{
             if(o.id!==parentId) return o;
@@ -2487,6 +2633,14 @@ export default function App() {
                   ).length;
                   const slipDisabled = canPrintSlip === 0;
 
+                  /* Request refunds: only fulfilled labels not already refunded */
+                  const refundable = selectedOrders.filter(o=>
+                    (o.shipStatus==='label_purchased'||o.shipStatus==='shipped') &&
+                    !(o.shipments||[]).every(s=>s.syncedFromChannel)
+                  );
+                  const canRefund = refundable.length;
+                  const refundDisabled = canRefund === 0;
+
                   function Counter({ a, b, disabled }) {
                     if (b===0) return null;
                     return (
@@ -2514,6 +2668,20 @@ export default function App() {
                         style={{ display:'flex',alignItems:'center',padding:'5px 12px',fontSize:12,fontWeight:500,background:slipDisabled?'#F5F5F5':'transparent',color:slipDisabled?'rgba(0,0,0,0.28)':'rgba(0,0,0,0.65)',border:`1px solid ${slipDisabled?'#E0E0E0':'rgba(0,0,0,0.2)'}`,borderRadius:5,cursor:slipDisabled?'not-allowed':'pointer',whiteSpace:'nowrap' }}>
                         🧾 Print Packing Slip
                         {total>1 && <Counter a={canPrintSlip} b={total} disabled={slipDisabled} />}
+                      </button>
+
+                      {/* Request refunds — destructive */}
+                      <button
+                        disabled={refundDisabled}
+                        onClick={()=>{ if(refundDisabled) return; openRefund(canRefund, ()=>{
+                          refundable.forEach(o=>updateOrder(o.id,{ shipStatus:'refund_requested', shipments:(o.shipments||[]).map(s=>({...s,refundStatus:'requested'})) }));
+                          setSelectedIds(new Set());
+                          setRefundModal(null);
+                          showToast(`↩ Requested ${canRefund} refund${canRefund!==1?'s':''}`);
+                        }); }}
+                        style={{ display:'flex',alignItems:'center',padding:'5px 12px',fontSize:12,fontWeight:600,background:refundDisabled?'#F5F5F5':'transparent',color:refundDisabled?'rgba(0,0,0,0.28)':'#C62828',border:`1px solid ${refundDisabled?'#E0E0E0':'#FFCDD2'}`,borderRadius:5,cursor:refundDisabled?'not-allowed':'pointer',whiteSpace:'nowrap' }}>
+                        ↩ Request refund{canRefund!==1?'s':''}
+                        {total>1 && <Counter a={canRefund} b={total} disabled={refundDisabled} />}
                       </button>
                     </>
                   );
@@ -2614,8 +2782,14 @@ export default function App() {
                               order={order}
                               subOrder={false}
                               isFulfilled={order.shipStatus==='label_purchased'||order.shipStatus==='shipped'}
+                              isRefunded={order.shipStatus==='refund_requested'||order.shipStatus==='refunded'}
                               onOpenPanel={()=>setActiveId(isActive?null:order.id)}
                               onOpenSplit={()=>{ setActiveId(order.id); }}
+                              onRequestRefund={()=>openRefund(1, ()=>{
+                                updateOrder(order.id,{ shipStatus:'refund_requested', shipments:(order.shipments||[]).map(s=>({...s,refundStatus:'requested'})) });
+                                setRefundModal(null);
+                                showToast('↩ Refund requested · credited within 14 days');
+                              })}
                             />
                           </td>
                         </tr>
@@ -2671,8 +2845,20 @@ export default function App() {
                                   order={order}
                                   subOrder={true}
                                   isFulfilled={sub.shipStatus==='label_purchased'||sub.shipStatus==='shipped'}
+                                  isRefunded={sub.shipStatus==='refund_requested'||sub.shipStatus==='refunded'}
                                   onOpenPanel={()=>setActiveId(isSubActive?null:subKey)}
                                   onOpenSplit={()=>{}}
+                                  onRequestRefund={()=>openRefund(1, ()=>{
+                                    setOrders(prev=>prev.map(o=>{
+                                      if(o.id!==order.id) return o;
+                                      const newSubs=(o.subOrders||[]).map(s=>s.subId===sub.subId
+                                        ? {...s, shipStatus:'refund_requested', shipments:(s.shipments||[]).map(sh=>({...sh,refundStatus:'requested'}))}
+                                        : s);
+                                      return {...o, subOrders:newSubs};
+                                    }));
+                                    setRefundModal(null);
+                                    showToast('↩ Refund requested · credited within 14 days');
+                                  })}
                                 />
                               </td>
                             </tr>
@@ -2694,12 +2880,23 @@ export default function App() {
                 order={activeOrder}
                 onClose={()=>setActiveId(null)}
                 onUpdate={handleUpdateFromPanel}
+                onUpdateParent={updateOrder}
+                openRefundModal={openRefund}
                 showToast={showToast}
               />
             )}
           </div>
         </div>
       </div>
+
+      {/* Request Refund confirmation modal */}
+      {refundModal && (
+        <RefundModal
+          count={refundModal.count}
+          onConfirm={refundModal.onConfirm}
+          onClose={()=>setRefundModal(null)}
+        />
+      )}
 
       {/* Toast */}
       {toast&&(
