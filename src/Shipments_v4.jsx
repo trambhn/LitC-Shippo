@@ -294,20 +294,19 @@ function SplitOrderModal({ order, onSave, onClose, initialGroups=null }) {
   function changeQty(si,itemId,delta) {
     setQuantities(prev=>{
       const next=prev.map(s=>({...s}));
-      const maxQty=order.items.find(i=>i.id===itemId).qty;
       const cur=next[si][itemId]||0;
-      /* Cap each shipment's qty between 0 and the item's order total; the
-         add-up-to-total rule is enforced via validation, not by clamping. */
-      next[si]={...next[si],[itemId]:Math.max(0,Math.min(maxQty,cur+delta))};
+      /* No upper cap — each shipment can hold any quantity. The only rule is that
+         the per-item total across shipments must add up to the order quantity,
+         which is enforced by validation, not by clamping. */
+      next[si]={...next[si],[itemId]:Math.max(0,cur+delta)};
       return next;
     });
   }
   function setQty(si,itemId,val) {
     setQuantities(prev=>{
       const next=prev.map(s=>({...s}));
-      const maxQty=order.items.find(i=>i.id===itemId).qty;
       const digits=(''+val).replace(/[^0-9]/g,'');
-      const n=digits===''?0:Math.max(0,Math.min(maxQty,parseInt(digits,10)));
+      const n=digits===''?0:parseInt(digits,10);
       next[si]={...next[si],[itemId]:n};
       return next;
     });
