@@ -236,6 +236,39 @@ function FieldSelect({ label, value, onChange, options }) {
   );
 }
 
+/* ── Alert ───────────────────────────────────────────────────────────────────
+   Mirrors MUI v5 <Alert severity=...> (standard variant) with the same API so it
+   renders in the in-chat preview. In the LitCommerce project, replace this with the
+   real MUI Alert import (from the mui material package) and delete this component.
+----------------------------------------------------------------------------- */
+function Alert({ severity = 'info', variant = 'standard', children, sx, style }) {
+  const tokens = {
+    error:   { bg:'#FDEDED', color:'#5F2120', icon:'#EF5350' },
+    warning: { bg:'#FFF4E5', color:'#663C00', icon:'#FF9800' },
+    info:    { bg:'#E5F6FD', color:'#014361', icon:'#0288D1' },
+    success: { bg:'#EDF7ED', color:'#1E4620', icon:'#4CAF50' },
+  }[severity] || { bg:'#E5F6FD', color:'#014361', icon:'#0288D1' };
+  const icons = {
+    error:   'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z',
+    warning: 'M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z',
+    info:    'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z',
+    success: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z',
+  };
+  return (
+    <div role="alert" style={{
+      display:'flex', alignItems:'center', gap:12, padding:'6px 16px', borderRadius:4,
+      background: tokens.bg, color: tokens.color,
+      fontSize:14, lineHeight:1.43, fontFamily:'"Inter","Roboto","Helvetica","Arial",sans-serif',
+      ...(style||{}),
+    }}>
+      <svg viewBox="0 0 24 24" width="22" height="22" fill={tokens.icon} aria-hidden="true" style={{ flexShrink:0, marginRight:0 }}>
+        <path d={icons[severity] || icons.info} />
+      </svg>
+      <div style={{ padding:'8px 0' }}>{children}</div>
+    </div>
+  );
+}
+
 /* ── Split Order Modal ─────────────────────────────────────────────────────── */
 function SplitOrderModal({ order, onSave, onClose, initialGroups=null }) {
   const isEditing = !!(initialGroups && initialGroups.length);
@@ -262,17 +295,38 @@ function SplitOrderModal({ order, onSave, onClose, initialGroups=null }) {
     setQuantities(prev=>{
       const next=prev.map(s=>({...s}));
       const maxQty=order.items.find(i=>i.id===itemId).qty;
-      const totalInOthers=next.reduce((s,slot,idx)=>idx!==si?s+(slot[itemId]||0):s,0);
       const cur=next[si][itemId]||0;
-      next[si]={...next[si],[itemId]:Math.max(0,Math.min(maxQty-totalInOthers,cur+delta))};
+      /* Cap each shipment's qty between 0 and the item's order total; the
+         add-up-to-total rule is enforced via validation, not by clamping. */
+      next[si]={...next[si],[itemId]:Math.max(0,Math.min(maxQty,cur+delta))};
+      return next;
+    });
+  }
+  function setQty(si,itemId,val) {
+    setQuantities(prev=>{
+      const next=prev.map(s=>({...s}));
+      const maxQty=order.items.find(i=>i.id===itemId).qty;
+      const digits=(''+val).replace(/[^0-9]/g,'');
+      const n=digits===''?0:Math.max(0,Math.min(maxQty,parseInt(digits,10)));
+      next[si]={...next[si],[itemId]:n};
       return next;
     });
   }
   function weightFor(si){return order.items.reduce((s,i)=>s+(quantities[si][i.id]||0)*i.weight,0);}
   function handleSave(){
+    if (hasError) return;
     const groups=quantities.map((qmap,si)=>({shipmentIdx:si,itemIds:order.items.filter(i=>(qmap[i.id]||0)>0).map(i=>i.id)})).filter(g=>g.itemIds.length>0);
     onSave(groups);
   }
+
+  /* Validation: for each item, the quantities across all shipments must add up to the order total. */
+  const sumFor = (itemId) => quantities.reduce((s,slot)=>s+(slot[itemId]||0),0);
+  const itemErrors = {};
+  order.items.forEach(i => { itemErrors[i.id] = sumFor(i.id) !== i.qty; });
+  const hasError = Object.values(itemErrors).some(Boolean);
+
+  /* Can't split a single unit: disable Add shipment when there's exactly one item with qty 1. */
+  const addDisabled = order.items.length === 1 && (order.items[0].qty || 0) <= 1;
 
   return (
     <div style={{ position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center' }}>
@@ -281,7 +335,6 @@ function SplitOrderModal({ order, onSave, onClose, initialGroups=null }) {
           <span style={{ fontSize:18,fontWeight:700 }}>{isEditing ? 'Edit split shipment' : 'Split order'}</span>
           <button onClick={onClose} style={{ background:'none',border:'none',cursor:'pointer',fontSize:22,color:'rgba(0,0,0,0.4)',lineHeight:1 }}>×</button>
         </div>
-        <div style={{ padding:'14px 24px 0',fontSize:14,color:'rgba(0,0,0,0.6)' }}>{isEditing ? 'Move items between shipments, add a shipment, or remove one to merge items back.' : 'Split order to two shipments, or add more shipments.'}</div>
         <div style={{ flex:1,overflowY:'auto',padding:'16px 24px' }}>
           <div style={{ display:'grid',gridTemplateColumns:`1fr repeat(${quantities.length},200px) 60px`,marginBottom:8 }}>
             <div style={{ fontSize:11,fontWeight:700,color:'rgba(0,0,0,0.45)',textTransform:'uppercase',letterSpacing:'0.5px',paddingBottom:8,borderBottom:'2px solid #F0F0F0' }}>Items</div>
@@ -301,13 +354,17 @@ function SplitOrderModal({ order, onSave, onClose, initialGroups=null }) {
             <div key={item.id} style={{ display:'grid',gridTemplateColumns:`1fr repeat(${quantities.length},200px) 60px`,alignItems:'center',borderTop:'1px solid #F5F5F5',padding:'14px 0' }}>
               <div>
                 <div style={{ fontSize:13,fontWeight:500,color:'rgba(0,0,0,0.8)',paddingRight:12 }}>{item.name}</div>
-                <div style={{ fontSize:11.5,color:'#1976D2',marginTop:2 }}>{item.weight} lb — ${item.price.toFixed(2)}</div>
               </div>
               {quantities.map((qmap,si)=>(
                 <div key={si} style={{ paddingLeft:12 }}>
                   <div style={{ fontSize:10.5,fontWeight:600,color:'rgba(0,0,0,0.45)',textTransform:'uppercase',letterSpacing:'0.4px',marginBottom:4 }}>Quantity</div>
-                  <div style={{ display:'flex',alignItems:'center',border:'1px solid #E0E0E0',borderRadius:4,overflow:'hidden',width:140,background:'#fff' }}>
-                    <span style={{ flex:1,padding:'6px 10px',fontSize:13 }}>{qmap[item.id]||0}</span>
+                  <div style={{ display:'flex',alignItems:'center',border:`1px solid ${itemErrors[item.id]?'#EF5350':'#E0E0E0'}`,borderRadius:4,overflow:'hidden',width:140,background:itemErrors[item.id]?'#FFF5F5':'#fff' }}>
+                    <input
+                      type="text" inputMode="numeric"
+                      value={qmap[item.id]||0}
+                      onFocus={e=>e.target.select()}
+                      onChange={e=>setQty(si,item.id,e.target.value)}
+                      style={{ flex:1,minWidth:0,width:'100%',padding:'6px 10px',fontSize:13,border:'none',outline:'none',background:'transparent',color:itemErrors[item.id]?'#C62828':'inherit' }} />
                     <div style={{ display:'flex',flexDirection:'column',borderLeft:'1px solid #E0E0E0' }}>
                       <button onClick={()=>changeQty(si,item.id,1)} style={{ background:'none',border:'none',cursor:'pointer',padding:'2px 8px',fontSize:12,color:'rgba(0,0,0,0.5)',lineHeight:1.2 }}>▲</button>
                       <button onClick={()=>changeQty(si,item.id,-1)} style={{ background:'none',border:'none',cursor:'pointer',padding:'2px 8px',fontSize:12,color:'rgba(0,0,0,0.5)',lineHeight:1.2 }}>▼</button>
@@ -324,11 +381,20 @@ function SplitOrderModal({ order, onSave, onClose, initialGroups=null }) {
             <div style={{ fontSize:13,color:'rgba(0,0,0,0.5)',textAlign:'right' }}>{order.items.reduce((s,i)=>s+i.weight*i.qty,0).toFixed(1)}</div>
           </div>
         </div>
+        {hasError && (
+          <div style={{ padding:'12px 24px 0' }}>
+            <Alert severity="error" variant="standard">Quantities must add up to total</Alert>
+          </div>
+        )}
         <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',padding:'16px 24px',borderTop:'1px solid #F0F0F0' }}>
           <button onClick={()=>setQuantities(initQty())} style={{ background:'none',border:'none',cursor:'pointer',fontSize:14,fontWeight:500,color:'#1976D2' }}>Reset</button>
           <div style={{ display:'flex',gap:10 }}>
-            <button onClick={addShipment} style={{ padding:'9px 20px',fontSize:13,fontWeight:600,background:'transparent',color:'#1976D2',border:'1px solid #1976D2',borderRadius:6,cursor:'pointer' }}>Add shipment</button>
-            <button onClick={handleSave} style={{ padding:'9px 24px',fontSize:13,fontWeight:600,background:'#1976D2',color:'#fff',border:'none',borderRadius:6,cursor:'pointer' }}>{isEditing ? 'Save changes' : 'Save'}</button>
+            <button onClick={addDisabled?undefined:addShipment} disabled={addDisabled}
+              title={addDisabled?'A single item with quantity 1 cannot be split across shipments':undefined}
+              style={{ padding:'9px 20px',fontSize:13,fontWeight:600,background:'transparent',color:addDisabled?'rgba(0,0,0,0.3)':'#1976D2',border:`1px solid ${addDisabled?'#E0E0E0':'#1976D2'}`,borderRadius:6,cursor:addDisabled?'not-allowed':'pointer' }}>Add shipment</button>
+            <button onClick={handleSave} disabled={hasError}
+              title={hasError?'Quantities must add up to total':undefined}
+              style={{ padding:'9px 24px',fontSize:13,fontWeight:600,background:hasError?'#BBDEFB':'#1976D2',color:'#fff',border:'none',borderRadius:6,cursor:hasError?'not-allowed':'pointer' }}>{isEditing ? 'Save changes' : 'Save'}</button>
           </div>
         </div>
       </div>
@@ -688,7 +754,7 @@ function AddressEditForm({ which, draft, setDraft, fieldErrors, suggestion, onUs
 }
 
 /* ── Address block (one of: Recipient / Return) ── */
-function AddressBlock({ which, label, addr, isLast, shippo }) {
+function AddressBlock({ which, label, addr, isLast, shippo, onChange }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [saved,     setSaved]     = useState({ ...addr });
   const [dismissed, setDismissed] = useState(false);
@@ -707,12 +773,14 @@ function AddressBlock({ which, label, addr, isLast, shippo }) {
     if (required.some(f=>!(draft[f]||'').trim())) return;
     setSaved({ ...draft });
     setModalOpen(false);
+    onChange && onChange({ ...draft });
   }
 
   function handleUseSuggestion() {
     setSaved({ ...shippo.suggestion });
     setDismissed(true);
     setModalOpen(false);
+    onChange && onChange({ ...shippo.suggestion });
   }
 
   const modalTitle = which === 'recipient' ? 'Edit Recipient Address' : 'Edit Return Address';
@@ -1018,7 +1086,7 @@ function SenderAddressSelector({ onSelect }) {
   );
 }
 
-function AddressesSection({ order, addrEdits, setAddrEdits, error }) {
+function AddressesSection({ order, addrEdits, setAddrEdits, error, onRecipientChange }) {
   const [useReturnAsSender, setUseReturnAsSender] = useState(true);
   const [returnAddr, setReturnAddr] = useState({ ...addrEdits.sender });
   const [editingReturn, setEditingReturn] = useState(false);
@@ -1062,7 +1130,11 @@ function AddressesSection({ order, addrEdits, setAddrEdits, error }) {
         )}
       </div>
 
-      <AddressBlock which="recipient" label="Recipient" addr={addrEdits.recipient} isLast={true} shippo={MOCK_SHIPPO.recipient} />
+      <AddressBlock which="recipient" label="Recipient" addr={addrEdits.recipient} isLast={true} shippo={MOCK_SHIPPO.recipient}
+        onChange={newAddr => {
+          setAddrEdits(prev => ({ ...prev, recipient: { ...prev.recipient, ...newAddr } }));
+          onRecipientChange && onRecipientChange(newAddr);
+        }} />
     </SectionCard>
   );
 }
@@ -1671,6 +1743,24 @@ function ShipmentPanel({ order, onClose, onUpdate, onUpdateParent, openRefundMod
     });
   }
 
+  /* Recipient address is shared across every shipment of an order. Editing/validating it
+     on one split shipment persists to the order's shipTo, so all sibling shipments update too. */
+  const splitShipCount = order._subId ? (order._parentSubOrders?.length || 0) : (order.subOrders?.length || 0);
+  const isSplitOrder = splitShipCount > 1;
+  function handleRecipientChange(newAddr) {
+    const shipTo = {
+      name:  newAddr.name,
+      addr:  [newAddr.street, newAddr.street2].filter(Boolean).join(', '),
+      city:  newAddr.city,
+      state: newAddr.state,
+      zip:   newAddr.zip,
+      country: order.shipTo.country || newAddr.country,
+    };
+    updateParent(order.id, { shipTo });
+    if (isSplitOrder) showToast(`📍 Recipient applied to all ${splitShipCount} shipments`);
+    else showToast('📍 Recipient address updated');
+  }
+
   function handleSplitSave(groups) {
     /* Always re-split the parent order (order.id is the parent id, even for a sub-order panel) */
     if (groups.length <= 1) {
@@ -1862,7 +1952,7 @@ function ShipmentPanel({ order, onClose, onUpdate, onUpdateParent, openRefundMod
           )}
 
           {/* ── Addresses ── */}
-          <AddressesSection order={order} addrEdits={addrEdits} setAddrEdits={setAddrEdits} error={addrError} />
+          <AddressesSection order={order} addrEdits={addrEdits} setAddrEdits={setAddrEdits} error={addrError} onRecipientChange={handleRecipientChange} />
 
           {/* ── Items ── */}
           <SectionCard
@@ -2501,7 +2591,6 @@ export default function App() {
 
   const counts = {
     all:       orders.length,
-    all:       orders.length,
     ready:     orders.filter(o=>o.shipStatus==='unlabeled' && !o.addressError).length,
     errors:    orders.filter(o=>o.shipStatus==='unlabeled' && !!o.addressError).length,
     shipping:  orders.filter(o=>o.shipStatus==='label_purchased').length,
@@ -2633,14 +2722,6 @@ export default function App() {
                   ).length;
                   const slipDisabled = canPrintSlip === 0;
 
-                  /* Request refunds: only fulfilled labels not already refunded */
-                  const refundable = selectedOrders.filter(o=>
-                    (o.shipStatus==='label_purchased'||o.shipStatus==='shipped') &&
-                    !(o.shipments||[]).every(s=>s.syncedFromChannel)
-                  );
-                  const canRefund = refundable.length;
-                  const refundDisabled = canRefund === 0;
-
                   function Counter({ a, b, disabled }) {
                     if (b===0) return null;
                     return (
@@ -2668,20 +2749,6 @@ export default function App() {
                         style={{ display:'flex',alignItems:'center',padding:'5px 12px',fontSize:12,fontWeight:500,background:slipDisabled?'#F5F5F5':'transparent',color:slipDisabled?'rgba(0,0,0,0.28)':'rgba(0,0,0,0.65)',border:`1px solid ${slipDisabled?'#E0E0E0':'rgba(0,0,0,0.2)'}`,borderRadius:5,cursor:slipDisabled?'not-allowed':'pointer',whiteSpace:'nowrap' }}>
                         🧾 Print Packing Slip
                         {total>1 && <Counter a={canPrintSlip} b={total} disabled={slipDisabled} />}
-                      </button>
-
-                      {/* Request refunds — destructive */}
-                      <button
-                        disabled={refundDisabled}
-                        onClick={()=>{ if(refundDisabled) return; openRefund(canRefund, ()=>{
-                          refundable.forEach(o=>updateOrder(o.id,{ shipStatus:'refund_requested', shipments:(o.shipments||[]).map(s=>({...s,refundStatus:'requested'})) }));
-                          setSelectedIds(new Set());
-                          setRefundModal(null);
-                          showToast(`↩ Requested ${canRefund} refund${canRefund!==1?'s':''}`);
-                        }); }}
-                        style={{ display:'flex',alignItems:'center',padding:'5px 12px',fontSize:12,fontWeight:600,background:refundDisabled?'#F5F5F5':'transparent',color:refundDisabled?'rgba(0,0,0,0.28)':'#C62828',border:`1px solid ${refundDisabled?'#E0E0E0':'#FFCDD2'}`,borderRadius:5,cursor:refundDisabled?'not-allowed':'pointer',whiteSpace:'nowrap' }}>
-                        ↩ Request refund{canRefund!==1?'s':''}
-                        {total>1 && <Counter a={canRefund} b={total} disabled={refundDisabled} />}
                       </button>
                     </>
                   );
@@ -2757,13 +2824,9 @@ export default function App() {
                             <DestinationCell order={order} />
                           </td>
 
-                          {/* Items */}
+                          {/* Items — empty for the parent (split) order row */}
                           <td style={{ padding:'10px 10px' }}>
-                            {hasSubs ? (
-                              <div style={{ fontSize:12,color:'rgba(0,0,0,0.5)' }}>{order.items.length} items · {order.subOrders.length} shipments</div>
-                            ) : (
-                              <ItemsCell items={order.items} />
-                            )}
+                            {!hasSubs && <ItemsCell items={order.items} />}
                           </td>
 
                           {/* Carrier & Tracking */}
