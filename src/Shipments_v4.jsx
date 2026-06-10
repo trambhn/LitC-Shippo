@@ -2462,7 +2462,7 @@ function DateRangePicker({ value, onChange, onApply, onClear, hasFilter }) {
 
 /* ── SearchFilterRow ─────────────────────────────────────────────────────── */
 const STATUS_OPTIONS = [
-  { value:'', label:'Shipping status' },
+  { value:'', label:'Fulfillment status' },
   { value:'unlabeled',       label:'Unlabeled' },
   { value:'label_purchased', label:'Label purchased' },
   { value:'shipped',         label:'Shipped' },
@@ -2519,8 +2519,8 @@ function SearchFilterRow({ searchQ, setSearchQ, statusFilter, setStatusFilter, d
       {/* Divider */}
       <div style={{ width:1, height:22, background:'#E0E0E0', flexShrink:0 }} />
 
-      {/* Shipping Status filter */}
-      <FilterPill label={hasStatusFilter ? STATUS_OPTIONS.find(o=>o.value===statusFilter)?.label : 'Shipping status'} active={hasStatusFilter}>
+      {/* Fulfillment Status filter */}
+      <FilterPill label={hasStatusFilter ? STATUS_OPTIONS.find(o=>o.value===statusFilter)?.label : 'Fulfillment status'} active={hasStatusFilter}>
         {({ close }) => (
           <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
             {STATUS_OPTIONS.map(opt=>(
@@ -2711,44 +2711,53 @@ export default function App() {
                   const selectedOrders = filtered.filter(o=>selectedIds.has(o.id));
                   const total = selectedOrders.length;
 
-                  /* Print Label: all selected orders can print (any status) */
-                  const canPrintLabel = total; /* always actionable if selected */
-                  const labelDisabled = total === 0;
-
-                  /* Print Packing Slip: only orders that have a purchased label */
-                  const canPrintSlip = selectedOrders.filter(o=>
+                  /* Only orders with a purchased label can have a label / packing slip printed. */
+                  const printable = selectedOrders.filter(o=>
                     o.shipStatus==='label_purchased'||o.shipStatus==='shipped'
                   ).length;
-                  const slipDisabled = canPrintSlip === 0;
+                  const skipped = total - printable;
+                  const noneToPrint = total===0 || printable===0;
 
-                  function Counter({ a, b, disabled }) {
-                    if (b===0) return null;
-                    return (
-                      <span style={{ display:'inline-flex',alignItems:'center',gap:2,marginLeft:6,fontSize:11,fontWeight:600,color:disabled?'rgba(0,0,0,0.28)':'rgba(255,255,255,0.9)',background:disabled?'transparent':'rgba(0,0,0,0.15)',borderRadius:9999,padding:'1px 7px',border:disabled?'1px solid rgba(0,0,0,0.12)':'none' }}>
-                        {a}<span style={{ opacity:0.6,margin:'0 1px' }}>/</span>{b}
-                      </span>
-                    );
-                  }
+                  const labelText = total===0 ? 'Print labels'
+                    : printable===0 ? 'No labels to print'
+                    : `Print ${printable} label${printable!==1?'s':''}`;
+                  const slipText  = total===0 ? 'Print packing slips'
+                    : printable===0 ? 'No slips to print'
+                    : `Print ${printable} packing slip${printable!==1?'s':''}`;
+
+                  const tip = (noun) => total===0 ? `Select orders to print their ${noun}s`
+                    : printable===0 ? `None of the ${total} selected orders have a purchased label yet`
+                    : `${printable} ready to print${skipped>0?` · ${skipped} skipped (no label yet)`:''}`;
+
+                  const primaryBtn = { display:'flex',alignItems:'center',padding:'5px 12px',fontSize:12,fontWeight:600,borderRadius:5,whiteSpace:'nowrap',border:'none' };
+                  const ghostBtn   = { display:'flex',alignItems:'center',padding:'5px 12px',fontSize:12,fontWeight:500,borderRadius:5,whiteSpace:'nowrap' };
 
                   return (
                     <>
                       {/* Print Label — primary */}
                       <button
-                        disabled={labelDisabled}
-                        onClick={()=>!labelDisabled&&showToast(`🖨 Printing ${canPrintLabel} label${canPrintLabel!==1?'s':''}…`)}
-                        style={{ display:'flex',alignItems:'center',padding:'5px 12px',fontSize:12,fontWeight:600,background:labelDisabled?'#E0E0E0':'#1976D2',color:labelDisabled?'rgba(0,0,0,0.28)':'#fff',border:'none',borderRadius:5,cursor:labelDisabled?'not-allowed':'pointer',whiteSpace:'nowrap' }}>
-                        🖨 Print Label
-                        {total>1 && <Counter a={canPrintLabel} b={total} disabled={labelDisabled} />}
+                        disabled={noneToPrint}
+                        title={tip('label')}
+                        onClick={()=>!noneToPrint&&showToast(`🖨 Printing ${printable} label${printable!==1?'s':''}…`)}
+                        style={{ ...primaryBtn, background:noneToPrint?'#E0E0E0':'#1976D2', color:noneToPrint?'rgba(0,0,0,0.28)':'#fff', cursor:noneToPrint?'not-allowed':'pointer' }}>
+                        🖨 {labelText}
                       </button>
 
                       {/* Print Packing Slip */}
                       <button
-                        disabled={slipDisabled}
-                        onClick={()=>!slipDisabled&&showToast(`🧾 Printing ${canPrintSlip} packing slip${canPrintSlip!==1?'s':''}…`)}
-                        style={{ display:'flex',alignItems:'center',padding:'5px 12px',fontSize:12,fontWeight:500,background:slipDisabled?'#F5F5F5':'transparent',color:slipDisabled?'rgba(0,0,0,0.28)':'rgba(0,0,0,0.65)',border:`1px solid ${slipDisabled?'#E0E0E0':'rgba(0,0,0,0.2)'}`,borderRadius:5,cursor:slipDisabled?'not-allowed':'pointer',whiteSpace:'nowrap' }}>
-                        🧾 Print Packing Slip
-                        {total>1 && <Counter a={canPrintSlip} b={total} disabled={slipDisabled} />}
+                        disabled={noneToPrint}
+                        title={tip('packing slip')}
+                        onClick={()=>!noneToPrint&&showToast(`🧾 Printing ${printable} packing slip${printable!==1?'s':''}…`)}
+                        style={{ ...ghostBtn, background:noneToPrint?'#F5F5F5':'transparent', color:noneToPrint?'rgba(0,0,0,0.28)':'rgba(0,0,0,0.65)', border:`1px solid ${noneToPrint?'#E0E0E0':'rgba(0,0,0,0.2)'}`, cursor:noneToPrint?'not-allowed':'pointer' }}>
+                        🧾 {slipText}
                       </button>
+
+                      {/* Helper: only appears when some selected orders can't print */}
+                      {total>0 && skipped>0 && (
+                        <span style={{ fontSize:12, color:'rgba(0,0,0,0.45)', whiteSpace:'nowrap' }}>
+                          {skipped} of {total} selected don’t have a label yet
+                        </span>
+                      )}
                     </>
                   );
                 })()}
@@ -2768,7 +2777,7 @@ export default function App() {
                   <col style={{ width:160 }}/>    {/* Destination */}
                   <col style={{ width:'auto' }}/> {/* Items */}
                   <col style={{ width:180 }}/>    {/* Carrier + Tracking */}
-                  <col style={{ width:140 }}/>    {/* Shipping Status */}
+                  <col style={{ width:140 }}/>    {/* Fulfillment Status */}
                   <col style={{ width:40 }}/>     {/* More actions */}
                 </colgroup>
                 <thead style={{ position:'sticky',top:0,zIndex:1 }}>
@@ -2776,7 +2785,7 @@ export default function App() {
                     <th style={{ padding:'10px 12px',height:36,textAlign:'center' }}>
                       <input type="checkbox" checked={selectedIds.size===filtered.length&&filtered.length>0} onChange={toggleAll} />
                     </th>
-                    {['Order #','Channel','Destination','Items','Carrier & Tracking','Shipping Status',''].map(h=>(
+                    {['Order #','Channel','Destination','Items','Carrier & Tracking','Fulfillment Status',''].map(h=>(
                       <th key={h} style={{ padding:'10px 10px',height:36,textAlign:'left',fontSize:11,fontWeight:500,color:'rgba(0,0,0,0.45)',letterSpacing:'0.5px',textTransform:'uppercase',whiteSpace:'nowrap' }}>{h}</th>
                     ))}
                   </tr>
@@ -2833,7 +2842,7 @@ export default function App() {
                             <TrackingCell shipment={shipment} />
                           </td>
 
-                          {/* Shipping Status */}
+                          {/* Fulfillment Status */}
                           <td style={{ padding:'10px 10px' }}>
                             <Chip status={order.shipStatus} />
                           </td>
@@ -2896,7 +2905,7 @@ export default function App() {
                                 <TrackingCell shipment={subShipment} />
                               </td>
 
-                              {/* Shipping Status */}
+                              {/* Fulfillment Status */}
                               <td style={{ padding:'10px 10px' }}>
                                 <Chip status={sub.shipStatus||'unlabeled'} small />
                               </td>
