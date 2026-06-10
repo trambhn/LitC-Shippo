@@ -2462,7 +2462,7 @@ function DateRangePicker({ value, onChange, onApply, onClear, hasFilter }) {
 
 /* ── SearchFilterRow ─────────────────────────────────────────────────────── */
 const STATUS_OPTIONS = [
-  { value:'', label:'Fulfillment status' },
+  { value:'', label:'Shipping status' },
   { value:'unlabeled',       label:'Unlabeled' },
   { value:'label_purchased', label:'Label purchased' },
   { value:'shipped',         label:'Shipped' },
@@ -2519,8 +2519,8 @@ function SearchFilterRow({ searchQ, setSearchQ, statusFilter, setStatusFilter, d
       {/* Divider */}
       <div style={{ width:1, height:22, background:'#E0E0E0', flexShrink:0 }} />
 
-      {/* Fulfillment Status filter */}
-      <FilterPill label={hasStatusFilter ? STATUS_OPTIONS.find(o=>o.value===statusFilter)?.label : 'Fulfillment status'} active={hasStatusFilter}>
+      {/* Shipping Status filter */}
+      <FilterPill label={hasStatusFilter ? STATUS_OPTIONS.find(o=>o.value===statusFilter)?.label : 'Shipping status'} active={hasStatusFilter}>
         {({ close }) => (
           <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
             {STATUS_OPTIONS.map(opt=>(
@@ -2768,7 +2768,7 @@ export default function App() {
                   <col style={{ width:160 }}/>    {/* Destination */}
                   <col style={{ width:'auto' }}/> {/* Items */}
                   <col style={{ width:180 }}/>    {/* Carrier + Tracking */}
-                  <col style={{ width:140 }}/>    {/* Fulfillment Status */}
+                  <col style={{ width:140 }}/>    {/* Shipping Status */}
                   <col style={{ width:40 }}/>     {/* More actions */}
                 </colgroup>
                 <thead style={{ position:'sticky',top:0,zIndex:1 }}>
@@ -2776,7 +2776,7 @@ export default function App() {
                     <th style={{ padding:'10px 12px',height:36,textAlign:'center' }}>
                       <input type="checkbox" checked={selectedIds.size===filtered.length&&filtered.length>0} onChange={toggleAll} />
                     </th>
-                    {['Order #','Channel','Destination','Items','Carrier & Tracking','Fulfillment Status',''].map(h=>(
+                    {['Order #','Channel','Destination','Items','Carrier & Tracking','Shipping Status',''].map(h=>(
                       <th key={h} style={{ padding:'10px 10px',height:36,textAlign:'left',fontSize:11,fontWeight:500,color:'rgba(0,0,0,0.45)',letterSpacing:'0.5px',textTransform:'uppercase',whiteSpace:'nowrap' }}>{h}</th>
                     ))}
                   </tr>
@@ -2833,7 +2833,7 @@ export default function App() {
                             <TrackingCell shipment={shipment} />
                           </td>
 
-                          {/* Fulfillment Status */}
+                          {/* Shipping Status */}
                           <td style={{ padding:'10px 10px' }}>
                             <Chip status={order.shipStatus} />
                           </td>
@@ -2896,7 +2896,7 @@ export default function App() {
                                 <TrackingCell shipment={subShipment} />
                               </td>
 
-                              {/* Fulfillment Status */}
+                              {/* Shipping Status */}
                               <td style={{ padding:'10px 10px' }}>
                                 <Chip status={sub.shipStatus||'unlabeled'} small />
                               </td>
