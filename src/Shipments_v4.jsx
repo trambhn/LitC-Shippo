@@ -2700,13 +2700,6 @@ export default function App() {
                 })}
               </div>
               <div style={{ padding:'7px 20px',display:'flex',alignItems:'center',gap:8,minHeight:42,borderTop:'1px solid rgba(0,0,0,0.05)' }}>
-                {/* Selection count */}
-                <span style={{ fontSize:12,color:'rgba(0,0,0,0.45)',minWidth:72 }}>
-                  {selectedIds.size>0
-                    ? <><strong style={{ fontWeight:500,color:'rgba(0,0,0,0.7)' }}>{selectedIds.size}</strong> selected</>
-                    : `${filtered.length} order${filtered.length!==1?'s':''}`}
-                </span>
-
                 {(() => {
                   const selectedOrders = filtered.filter(o=>selectedIds.has(o.id));
                   const total = selectedOrders.length;
@@ -2734,22 +2727,22 @@ export default function App() {
 
                   return (
                     <>
-                      {/* Print Label — primary */}
-                      <button
-                        disabled={noneToPrint}
-                        title={tip('label')}
-                        onClick={()=>!noneToPrint&&showToast(`🖨 Printing ${printable} label${printable!==1?'s':''}…`)}
-                        style={{ ...primaryBtn, background:noneToPrint?'#E0E0E0':'#1976D2', color:noneToPrint?'rgba(0,0,0,0.28)':'#fff', cursor:noneToPrint?'not-allowed':'pointer' }}>
-                        🖨 {labelText}
-                      </button>
-
-                      {/* Print Packing Slip */}
+                      {/* Print Packing Slip — left */}
                       <button
                         disabled={noneToPrint}
                         title={tip('packing slip')}
                         onClick={()=>!noneToPrint&&showToast(`🧾 Printing ${printable} packing slip${printable!==1?'s':''}…`)}
                         style={{ ...ghostBtn, background:noneToPrint?'#F5F5F5':'transparent', color:noneToPrint?'rgba(0,0,0,0.28)':'rgba(0,0,0,0.65)', border:`1px solid ${noneToPrint?'#E0E0E0':'rgba(0,0,0,0.2)'}`, cursor:noneToPrint?'not-allowed':'pointer' }}>
                         🧾 {slipText}
+                      </button>
+
+                      {/* Print Label — right, primary */}
+                      <button
+                        disabled={noneToPrint}
+                        title={tip('label')}
+                        onClick={()=>!noneToPrint&&showToast(`🖨 Printing ${printable} label${printable!==1?'s':''}…`)}
+                        style={{ ...primaryBtn, background:noneToPrint?'#E0E0E0':'#1976D2', color:noneToPrint?'rgba(0,0,0,0.28)':'#fff', cursor:noneToPrint?'not-allowed':'pointer' }}>
+                        🖨 {labelText}
                       </button>
 
                       {/* Helper: only appears when some selected orders can't print */}
