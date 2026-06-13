@@ -156,11 +156,19 @@ function CalendarPicker({ value, onChange }) {
 /* ── Primitives ────────────────────────────────────────────────────────────── */
 function Chip({ status, small }) {
   const cfg = {
+    /* Fulfillment lifecycle (used internally / fallback) */
     unlabeled:       { label:'Unlabeled',       bg:'#F5F5F5', color:'rgba(0,0,0,0.55)', border:'#E0E0E0' },
     label_purchased: { label:'Label Purchased', bg:'#E5F6FD', color:'#0288D1',          border:'#B3E5FC' },
     shipped:         { label:'Shipped',         bg:'#E3F2FD', color:'#1976D2',          border:'#BBDEFB' },
     refund_requested:{ label:'Refund Requested',bg:'#FFF3E0', color:'#E65100',          border:'#FFE0B2' },
     refunded:        { label:'Refunded',        bg:'#EEEEEE', color:'#616161',          border:'#E0E0E0' },
+    /* Shippo shipping (tracking) status */
+    UNKNOWN:         { label:'Unknown',         bg:'#F5F5F5', color:'rgba(0,0,0,0.55)', border:'#E0E0E0' },
+    PRE_TRANSIT:     { label:'Pre-transit',     bg:'#E5F6FD', color:'#0288D1',          border:'#B3E5FC' },
+    TRANSIT:         { label:'In transit',      bg:'#E3F2FD', color:'#1976D2',          border:'#BBDEFB' },
+    DELIVERED:       { label:'Delivered',       bg:'#E8F5E9', color:'#2E7D32',          border:'#C8E6C9' },
+    RETURNED:        { label:'Returned',        bg:'#FFF3E0', color:'#E65100',          border:'#FFE0B2' },
+    FAILURE:         { label:'Failure',         bg:'#FDEDED', color:'#C62828',          border:'#F5C6CB' },
   };
   const { label, bg, color, border } = cfg[status] || cfg.unlabeled;
   return (
@@ -2461,11 +2469,22 @@ function DateRangePicker({ value, onChange, onApply, onClear, hasFilter }) {
 }
 
 /* ── SearchFilterRow ─────────────────────────────────────────────────────── */
+/* Shippo shipping (tracking) status of an order. Falls back to a value derived
+   from the fulfillment lifecycle when an order has no explicit tracking status. */
+function shippingStatusOf(o) {
+  if (o.trackingStatus) return o.trackingStatus;
+  if (o.shipStatus === 'shipped') return 'TRANSIT';
+  if (o.shipStatus === 'label_purchased') return 'PRE_TRANSIT';
+  return 'UNKNOWN';
+}
 const STATUS_OPTIONS = [
-  { value:'', label:'Fulfillment status' },
-  { value:'unlabeled',       label:'Unlabeled' },
-  { value:'label_purchased', label:'Label purchased' },
-  { value:'shipped',         label:'Shipped' },
+  { value:'', label:'Shipping status' },
+  { value:'UNKNOWN',     label:'Unknown' },
+  { value:'PRE_TRANSIT', label:'Pre-transit' },
+  { value:'TRANSIT',     label:'In transit' },
+  { value:'DELIVERED',   label:'Delivered' },
+  { value:'RETURNED',    label:'Returned' },
+  { value:'FAILURE',     label:'Failure' },
 ];
 
 function FilterPill({ label, active, onClick, children }) {
@@ -2519,8 +2538,8 @@ function SearchFilterRow({ searchQ, setSearchQ, statusFilter, setStatusFilter, d
       {/* Divider */}
       <div style={{ width:1, height:22, background:'#E0E0E0', flexShrink:0 }} />
 
-      {/* Fulfillment Status filter */}
-      <FilterPill label={hasStatusFilter ? STATUS_OPTIONS.find(o=>o.value===statusFilter)?.label : 'Fulfillment status'} active={hasStatusFilter}>
+      {/* Shipping Status filter */}
+      <FilterPill label={hasStatusFilter ? STATUS_OPTIONS.find(o=>o.value===statusFilter)?.label : 'Shipping status'} active={hasStatusFilter}>
         {({ close }) => (
           <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
             {STATUS_OPTIONS.map(opt=>(
@@ -2582,11 +2601,24 @@ export default function App() {
   const [toast,       setToast]       = useState(null);
   const [expanded,    setExpanded]    = useState(new Set());
   const [refundModal, setRefundModal] = useState(null); /* { count, onConfirm } */
+  const [splitOrder,  setSplitOrder]  = useState(null); /* order being split from the table */
 
   function updateOrder(id, patch) { setOrders(prev=>prev.map(o=>o.id===id?{...o,...patch}:o)); }
   function showToast(msg) { setToast(msg); setTimeout(()=>setToast(null),3000); }
   function setTweak(k,v) { setTweaks(t=>({...t,[k]:v})); }
   function openRefund(count, onConfirm) { setRefundModal({ count, onConfirm: () => { onConfirm(); setRefundModal(null); } }); }
+  function saveSplitFromTable(groups) {
+    const id = splitOrder.id;
+    if (groups.length <= 1) {
+      updateOrder(id, { subOrders:null });
+      showToast('✓ Shipments merged back into one order');
+    } else {
+      const subOrders = groups.map((g,i)=>({ subId:`${id}-S${i+1}`, label:`Shipment ${i+1} of ${groups.length}`, itemIds:g.itemIds, shipStatus:'unlabeled', shipments:[] }));
+      updateOrder(id, { subOrders });
+      showToast(`✓ Order split into ${subOrders.length} shipments`);
+    }
+    setSplitOrder(null);
+  }
 
   const counts = {
     all:       orders.length,
@@ -2610,7 +2642,7 @@ export default function App() {
         o.items.some(i=>i.name.toLowerCase().includes(q))
       );
     }
-    if (statusFilter) list = list.filter(o=>o.shipStatus===statusFilter);
+    if (statusFilter) list = list.filter(o=>shippingStatusOf(o)===statusFilter);
     if (sortOrder==='oldest') list = [...list].reverse();
     return list;
   })();
@@ -2770,7 +2802,7 @@ export default function App() {
                   <col style={{ width:160 }}/>    {/* Destination */}
                   <col style={{ width:'auto' }}/> {/* Items */}
                   <col style={{ width:180 }}/>    {/* Carrier + Tracking */}
-                  <col style={{ width:140 }}/>    {/* Fulfillment Status */}
+                  <col style={{ width:140 }}/>    {/* Shipping Status */}
                   <col style={{ width:40 }}/>     {/* More actions */}
                 </colgroup>
                 <thead style={{ position:'sticky',top:0,zIndex:1 }}>
@@ -2778,7 +2810,7 @@ export default function App() {
                     <th style={{ padding:'10px 12px',height:36,textAlign:'center' }}>
                       <input type="checkbox" checked={selectedIds.size===filtered.length&&filtered.length>0} onChange={toggleAll} />
                     </th>
-                    {['Order #','Channel','Destination','Items','Carrier & Tracking','Fulfillment Status',''].map(h=>(
+                    {['Order #','Channel','Destination','Items','Carrier & Tracking','Shipping Status',''].map(h=>(
                       <th key={h} style={{ padding:'10px 10px',height:36,textAlign:'left',fontSize:11,fontWeight:500,color:'rgba(0,0,0,0.45)',letterSpacing:'0.5px',textTransform:'uppercase',whiteSpace:'nowrap' }}>{h}</th>
                     ))}
                   </tr>
@@ -2835,9 +2867,9 @@ export default function App() {
                             <TrackingCell shipment={shipment} />
                           </td>
 
-                          {/* Fulfillment Status */}
+                          {/* Shipping Status */}
                           <td style={{ padding:'10px 10px' }}>
-                            <Chip status={order.shipStatus} />
+                            <Chip status={(order.shipStatus==='refund_requested'||order.shipStatus==='refunded') ? order.shipStatus : shippingStatusOf(order)} />
                           </td>
 
                           {/* More actions ⋮ */}
@@ -2848,7 +2880,7 @@ export default function App() {
                               isFulfilled={order.shipStatus==='label_purchased'||order.shipStatus==='shipped'}
                               isRefunded={order.shipStatus==='refund_requested'||order.shipStatus==='refunded'}
                               onOpenPanel={()=>setActiveId(isActive?null:order.id)}
-                              onOpenSplit={()=>{ setActiveId(order.id); }}
+                              onOpenSplit={()=>setSplitOrder(order)}
                               onRequestRefund={()=>openRefund(1, ()=>{
                                 updateOrder(order.id,{ shipStatus:'refund_requested', shipments:(order.shipments||[]).map(s=>({...s,refundStatus:'requested'})) });
                                 setRefundModal(null);
@@ -2898,9 +2930,9 @@ export default function App() {
                                 <TrackingCell shipment={subShipment} />
                               </td>
 
-                              {/* Fulfillment Status */}
+                              {/* Shipping Status */}
                               <td style={{ padding:'10px 10px' }}>
-                                <Chip status={sub.shipStatus||'unlabeled'} small />
+                                <Chip status={(sub.shipStatus==='refund_requested'||sub.shipStatus==='refunded') ? sub.shipStatus : shippingStatusOf(sub)} small />
                               </td>
 
                               {/* More actions ⋮ */}
@@ -2959,6 +2991,16 @@ export default function App() {
           count={refundModal.count}
           onConfirm={refundModal.onConfirm}
           onClose={()=>setRefundModal(null)}
+        />
+      )}
+
+      {/* Split Order modal opened directly from the table row */}
+      {splitOrder && (
+        <SplitOrderModal
+          order={splitOrder}
+          initialGroups={splitOrder.subOrders || null}
+          onSave={saveSplitFromTable}
+          onClose={()=>setSplitOrder(null)}
         />
       )}
 
